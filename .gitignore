@@ -1,1 +1,3 @@
 relatorios/*.csv
+relatorios/*.xlsx
+output/*.pdf
