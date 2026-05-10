@@ -385,7 +385,8 @@ def df_monthly_summary(monthly):
                 if op == "daytrade":
                     sit, aliq = "Tributado", f"{TAX_DT[kind]*100:.0f}%"
                 elif kind == "AÇÃO" and swing_acoes <= EXEMPT:
-                    sit, aliq = "Isento", "0%"
+                    # Exemption only on gains; losses are Prejuizo (carry-forward)
+                    sit, aliq = ("Isento", "0%") if val > 0 else ("Prejuizo", "—")
                 else:
                     sit, aliq = "Tributado", f"{TAX_SW[kind]*100:.0f}%"
                 rows.append({
@@ -424,7 +425,9 @@ def df_renda_variavel_guide(positions, monthly):
         for kind in sorted(monthly_pnl[month]):
             for op in sorted(monthly_pnl[month][kind]):
                 pnl_val = monthly_pnl[month][kind][op]
-                isento  = (op == "swing" and kind == "AÇÃO" and swing_acoes <= EXEMPT)
+                # Exemption only shields gains — losses always appear (carry-forward)
+                isento  = (op == "swing" and kind == "AÇÃO" and swing_acoes <= EXEMPT
+                           and pnl_val > 0)
                 aliq    = 0.0 if isento else (TAX_DT[kind] if op == "daytrade" else TAX_SW[kind])
                 imposto = max(0.0, pnl_val * aliq)
                 rows.append({
@@ -542,6 +545,7 @@ def cover_page(pdf, positions, monthly):
 
     total_sw  = sum(p.pnl["swing"]    for p in positions.values())
     total_dt  = sum(p.pnl["daytrade"] for p in positions.values())
+    total_net = total_sw + total_dt
     div_total = sum(p.income.get("Dividendo", 0) + p.income.get("Rendimento", 0)
                     for p in positions.values())
     jcp_total = sum(p.income.get("Juros Sobre Capital Próprio", 0)
@@ -550,6 +554,7 @@ def cover_page(pdf, positions, monthly):
     n_traded  = len(positions)
 
     metrics = [
+        ("Resultado Líquido",        brl(total_net), total_net),
         ("P&L Swing",                brl(total_sw),  total_sw),
         ("P&L Day Trade",            brl(total_dt),  total_dt),
         ("Rend. Isentos (Div+FII)",  brl(div_total), div_total),
@@ -561,9 +566,12 @@ def cover_page(pdf, positions, monthly):
     ax = fig.add_axes([0.10, 0.10, 0.80, 0.68])
     ax.axis("off")
 
-    box_w, box_h = 0.29, 0.35
-    coords = [(0.02, 0.50), (0.36, 0.50), (0.70, 0.50),
-              (0.02, 0.05), (0.36, 0.05), (0.70, 0.05)]
+    box_w, box_h = 0.29, 0.27
+    coords = [
+        (0.02, 0.68), (0.36, 0.68), (0.70, 0.68),
+        (0.02, 0.37), (0.36, 0.37), (0.70, 0.37),
+        (0.36, 0.06),
+    ]
 
     for (label, value, sign), (bx, by) in zip(metrics, coords):
         color = (C["pos"] if sign is not None and sign >= 0
@@ -832,7 +840,9 @@ def print_declaracao_text(positions, monthly):
                 pnl_val = monthly_pnl[month].get(kind, {}).get(op, 0.0)
                 if pnl_val == 0.0:
                     continue
-                isento = (op == "swing" and kind == "AÇÃO" and swing_vol <= EXEMPT)
+                # Exemption only shields gains — losses always appear (carry-forward)
+                isento = (op == "swing" and kind == "AÇÃO" and swing_vol <= EXEMPT
+                          and pnl_val > 0)
                 if isento:
                     continue
                 aliq    = TAX_DT[kind] if op == "daytrade" else TAX_SW[kind]
